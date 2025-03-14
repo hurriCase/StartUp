@@ -1,129 +1,203 @@
-# StartUp Framework
+# Startup System
 
-A flexible and extensible framework for organizing application initialization steps in Unity projects.
+## Overview
+The Startup System provides a structured way to initialize your Unity application in sequential steps. Each step is executed asynchronously, allowing for complex initialization processes without blocking the main thread.
 
-## Quick Start
+## Features
+- Sequential execution of initialization steps
+- Async/await pattern for non-blocking operations
+- Automatic step registration and execution
+- Event-based completion notifications
+- Exception handling for initialization failures
 
-1. Create a new script that inherits from `StartUpController`:
+## Architecture
+
+### BaseStep
+The foundation class for all initialization steps.
 
 ```csharp
-using System;
-using System.Collections.Generic;
-using StartUp.Runtime;
-
-public class GameStartUpController : StartUpController
+public abstract class BaseStep
 {
-    protected override IReadOnlyList<Type> StepTypes => new List<Type>
+    public event Action<int, string> OnStepCompleted;
+
+    internal virtual async Task Execute(int step)
     {
-        typeof(DIStep),
-        typeof(AdsStep),
-        typeof(YourCustomStep)
-    };
+        try
+        {
+            await ExecuteInternal();
+            OnStepCompleted?.Invoke(step, GetType().Name);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[{GetType().Name}::Execute] Step initialization failed: {e.Message}");
+        }
+    }
+
+    protected abstract Task ExecuteInternal();
 }
 ```
 
-2. Create your custom initialization steps by extending `BaseStep`:
+### StartUpBase
+The controller class that manages step registration and execution.
+
+```csharp
+public abstract class StartUpBase
+{
+    public static bool IsInited { get; private set; }
+    public static event Action OnInitializationCompleted;
+
+    private static readonly List<Type> _stepTypesList = new();
+
+    public static void RegisterSteps(params Type[] steps) { /* ... */ }
+    public static async void InitializeApplication() { /* ... */ }
+}
+```
+
+### StepFactory
+An internal factory class that creates step instances.
+
+```csharp
+internal static class StepFactory
+{
+    internal static BaseStep CreateStep(Type stepType) { /* ... */ }
+}
+```
+
+## How to Use
+
+### 1. Create Your Initialization Steps
+
+Create concrete step classes by inheriting from `BaseStep` and implementing the required method:
 
 ```csharp
 using System.Threading.Tasks;
 using StartUp.Runtime;
-using UnityEngine;
 
-public class YourCustomStep : BaseStep
-{
-    protected override Task ExecuteInternal()
-    {
-        Debug.Log("Initializing custom systems...");
-        
-        // Your initialization code here
-        
-        return Task.CompletedTask;
-    }
-}
-```
-
-3. Add your `GameStartUpController` to a GameObject in your initial scene.
-
-## Features
-
-- **Sequential Initialization**: Execute initialization steps in a defined order
-- **Async Support**: Use async/await for operations that need to wait for completion
-- **Event System**: Get notified when initialization completes
-- **Extensible**: Create custom steps for your specific needs
-- **Code Stripping Prevention**: Built-in protection against IL2CPP stripping
-
-## Creating Custom Steps
-
-1. Create a class that inherits from `BaseStep`
-2. Override the `ExecuteInternal` method to implement your initialization logic
-3. Add your step to the `StepTypes` list in your custom `StartUpController`
-
-```csharp
-public class NetworkInitStep : BaseStep
+public class LoadConfigurationStep : BaseStep
 {
     protected override async Task ExecuteInternal()
     {
-        // Initialize network
-        var result = await NetworkManager.Initialize();
-        
-        if (!result.Success)
-            throw new Exception($"Network initialization failed: {result.ErrorMessage}");
+        // Load configurations asynchronously
+        await Task.Delay(100); // Simulating work
+        // Your initialization logic here
+    }
+}
+
+public class InitializeServicesStep : BaseStep
+{
+    protected override async Task ExecuteInternal()
+    {
+        // Initialize services asynchronously
+        await Task.Delay(200); // Simulating work
+        // Your initialization logic here
     }
 }
 ```
 
-### Manual Initialization
+### 2. Register Your Steps
 
-If you need to control when initialization starts:
-
-1. Set `_autoInitialize` to false in the inspector
-2. Call `InitializeApplication()` when you're ready to start
+Register your initialization steps in your game's entry point (such as a bootstrapper class):
 
 ```csharp
-[SerializeField] private GameStartUpController _startUpController;
+using StartUp.Runtime;
+using UnityEngine;
 
-private void StartGame()
+public class GameBootstrapper : MonoBehaviour
 {
-    _startUpController.InitializeApplication();
+    private void Awake()
+    {
+        StartUpBase.RegisterSteps(
+            typeof(LoadConfigurationStep),
+            typeof(InitializeServicesStep),
+            typeof(SetupUIStep),
+            typeof(LoadPlayerDataStep)
+        );
+        
+        StartUpBase.OnInitializationCompleted += OnAppInitialized;
+        StartUpBase.InitializeApplication();
+    }
+    
+    private void OnAppInitialized()
+    {
+        Debug.Log("Application initialization completed!");
+        // Start your game here
+    }
 }
 ```
 
-### Handling Initialization Completion
+### 3. Monitor Initialization Progress
 
-You can subscribe to the `OnInitializationCompleted` event to know when all steps have been executed:
+You can also subscribe to individual step completions if needed:
 
 ```csharp
-private void Awake()
+private void SubscribeToSteps()
 {
-    StartUpController.OnInitializationCompleted += OnStartUpCompleted;
-}
-
-private void OnStartUpCompleted()
-{
-    Debug.Log("All initialization steps have completed!");
-    LoadMainMenu();
-}
-
-private void OnDestroy()
-{
-    StartUpController.OnInitializationCompleted -= OnStartUpCompleted;
+    // This would need to be implemented differently since steps are created internally
+    // One approach is to add a static event in StartUpBase for step completion
+    StartUpBase.OnStepCompleted += (stepIndex, stepName) => 
+    {
+        Debug.Log($"Step {stepIndex}: {stepName} completed");
+        // Update loading UI
+    };
 }
 ```
-
-## Code Stripping Prevention
-
-This package includes a `link.xml` file that prevents code stripping in IL2CPP builds by preserving:
-
-- All types in the StartUp assembly
-- The BaseStep class
-- All classes that derive from BaseStep
-
-This ensures that reflection-based step creation works correctly in all build configurations.
 
 ## Best Practices
 
-1. **Keep Steps Focused**: Each step should handle a specific initialization concern
-2. **Consider Dependencies**: Organize steps to respect initialization order dependencies
-3. **Handle Errors**: Each step should handle its errors and provide meaningful messages
-4. **Use Async When Needed**: For operations that may take time (network, asset loading)
-5. **Log Progress**: Use the OnStepCompleted event to track initialization progress
+1. **Keep Steps Focused**: Each step should have a single responsibility.
+2. **Handle Exceptions**: Although the system catches exceptions, handle expected failures gracefully in your step implementation.
+3. **Avoid Dependencies Between Steps**: Design steps to be as independent as possible. If dependencies exist, ensure they're registered in the correct order.
+4. **Use Async Operations**: Leverage the async nature of the system for operations like loading assets, connecting to servers, etc.
+5. **Clean Up**: If a step allocates resources that need to be released, implement a cleanup mechanism.
+
+## Example Implementation
+
+```csharp
+// Example of a complete step that loads player data
+public class LoadPlayerDataStep : BaseStep
+{
+    protected override async Task ExecuteInternal()
+    {
+        // Check if local cache exists
+        bool hasLocalData = CheckLocalDataCache();
+        
+        if (hasLocalData)
+        {
+            // Load from local cache
+            await LoadFromLocalCache();
+        }
+        else
+        {
+            // Try loading from cloud
+            try
+            {
+                await LoadFromCloud();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Could not load from cloud: {e.Message}");
+                // Create new player data
+                CreateNewPlayerData();
+            }
+        }
+        
+        // Register player data with service locator or similar
+        RegisterPlayerData();
+    }
+    
+    // Implementation details...
+}
+```
+
+## Extending the System
+
+You can extend the system by:
+
+1. Creating a concrete implementation of `StartUpBase` for your specific game
+2. Adding progress reporting mechanisms
+3. Implementing step dependencies
+4. Adding step priorities for more complex initialization flows
+
+---
+
+This system provides a robust foundation for organizing your game's initialization process in a clear, maintainable way.
