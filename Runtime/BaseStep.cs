@@ -8,7 +8,7 @@ namespace StartUp.Runtime
     {
         public event Action<int, string> OnStepCompleted;
 
-        public virtual async Task Execute(int step)
+        internal virtual async Task Execute(int step)
         {
             try
             {

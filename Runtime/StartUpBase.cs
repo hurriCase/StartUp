@@ -1,18 +1,26 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace StartUp.Runtime
 {
-    public abstract class StartUpBase : MonoBehaviour
+    public abstract class StartUpBase
     {
         public static bool IsInited { get; private set; }
         public static event Action OnInitializationCompleted;
 
-        [SerializeField] private bool _autoInitialize = true;
+        private static readonly List<Type> _stepTypesList = new();
 
-        protected virtual IReadOnlyList<Type> StepTypes => new List<Type>();
+        public static void RegisterSteps(params Type[] steps)
+        {
+            foreach (var step in steps)
+            {
+                if (typeof(BaseStep).IsAssignableFrom(step))
+                    _stepTypesList.Add(step);
+                else
+                    Debug.LogError($"[StartUpBase::RegisterSteps] Type {step.Name} does not derive from BaseStep");
+            }
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStaticMembers()
@@ -21,22 +29,19 @@ namespace StartUp.Runtime
             IsInited = false;
         }
 
-        protected virtual void Awake()
-        {
-            if (_autoInitialize)
-            {
-                InitializeApplication();
-            }
-        }
-
-        public virtual async void InitializeApplication()
+        public static async void InitializeApplication()
         {
             try
             {
                 if (IsInited)
                     return;
 
-                await InitializeSteps();
+                for (var i = 0; i < _stepTypesList.Count; i++)
+                {
+                    var step = StepFactory.CreateStep(_stepTypesList[i]);
+                    step.OnStepCompleted += LogStepCompletion;
+                    await step.Execute(i);
+                }
 
                 IsInited = true;
                 OnInitializationCompleted?.Invoke();
@@ -48,24 +53,9 @@ namespace StartUp.Runtime
             }
         }
 
-        protected virtual async Task InitializeSteps()
-        {
-            for (var i = 0; i < StepTypes.Count; i++)
-            {
-                var step = StepFactory.CreateStep(StepTypes[i]);
-                step.OnStepCompleted += LogStepCompletion;
-                await step.Execute(i);
-            }
-        }
-
-        protected virtual void LogStepCompletion(int step, string stepName)
+        private static void LogStepCompletion(int step, string stepName)
         {
             Debug.Log($"[StartUpController::LogStepCompletion] Step {step} completed: {stepName}");
-        }
-
-        protected virtual void OnDestroy()
-        {
-            OnInitializationCompleted = null;
         }
     }
 }
