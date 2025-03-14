@@ -1,6 +1,6 @@
 {
-  "name": "com.firsttry.assetloader",
+  "name": "com.firsttry.startup",
   "version": "1.0.0",
-  "displayName": "Asset Loader",
+  "displayName": "Start Up",
   "unity": "2022.1"
 }
