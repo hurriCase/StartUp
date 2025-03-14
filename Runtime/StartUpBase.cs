@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace StartUp.Runtime
 {
-    public class StartUpController : MonoBehaviour
+    public abstract class StartUpBase : MonoBehaviour
     {
         public static bool IsInited { get; private set; }
         public static event Action OnInitializationCompleted;
