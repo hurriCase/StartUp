@@ -10,3 +10,6 @@
 ## [1.0.3] - 2025-03-14
 ### Refactor
 - Step execution before scene load.
+## [1.0.4] - 2025-03-15
+### Remove
+- Removed link.xml.
